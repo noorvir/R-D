@@ -1,0 +1,8 @@
+.python-version
+
+# Folders
+.idea/
+cmake-build-debug
+.vscode/
+
+.clang-format
