@@ -4,5 +4,6 @@
 .idea/
 cmake-build-debug
 .vscode/
-
+.ipynb_checkpoints
 .clang-format
+__pycache__
