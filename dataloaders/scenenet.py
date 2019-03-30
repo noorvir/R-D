@@ -4,6 +4,8 @@ from math import inf
 from PIL import Image
 from torch.utils.data import Dataset
 
+from utils.nn.transformations import
+
 
 class DataPoint:
     def __init__(self, d, p, i):
@@ -16,10 +18,11 @@ class DataPoint:
 class SceneNetDataset(Dataset):
 
     def __init__(self, root_path, split='train', use_shortcut=False,
-                 clip_size=inf):
+                 transform=None, clip_size=inf):
 
-        self.root = os.path.join(root_path, split)
         self.data_paths = []
+        self.transform = transform
+        self.root = os.path.join(root_path, split)
 
         data_point_count = 0
 
@@ -77,5 +80,13 @@ class SceneNetDataset(Dataset):
         pimage = Image.open(ppath)
         dimage = Image.open(dpath)
         iimage = Image.open(ipath)
+
+        if self.transform:
+
+            # pass seed to ensure same randomness for both depth and rgb image
+            # apply flip to target bot not other transformations
+
+            pimage, dimage, iimage = self.transform(inputs=[pimage, dimage],
+                                                    targets=[iimage])
 
         return DataPoint(pimage, dimage, iimage)

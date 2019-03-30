@@ -1,14 +1,9 @@
-import os
-import torch
-import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
 
-import transformations
+from utils.nn import transformations
 
-from skimage import io, transform
-from torch.utils.data import Dataset, DataLoader
-from torchvision import transforms, utils
+from torch.utils.data import Dataset
+from torchvision import transforms
 
 
 class ThingNetDataset(Dataset):
