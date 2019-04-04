@@ -17,3 +17,11 @@ _*Losses*_:
 - Try Dice-loss (balances out classes and small object but might lead to 
     unstable gradients)  
 
+
+# Outline
+
+*SceneFlow Dataset for ThingNet*
+
+- Contruct HDF5 dataset from tarfiles 
+    - draw matches and non-matches for each frame
+    
