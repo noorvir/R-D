@@ -46,6 +46,50 @@ def sample_outside_mask(mask, num_samples):
     return torch.index_select(outside_mask_pix, dim=0, index=idx)
 
 
+def get_image_values(image, pixel_idx):
+
+    shape = image.shape
+    if len(image.shape) == 3:
+        h, w, c = shape
+    else:
+        h, w = shape
+
+    image = torch.as_tensor(np.ascontiguousarray(image))
+    image = image.type(torch.LongTensor)
+
+    pixel_idx = torch.as_tensor(np.ascontiguousarray(pixel_idx))
+    pixel_idx = pixel_idx.type(torch.LongTensor)
+
+    flat_image = image.view(h * w, -1)
+    flat_pix_idx = pixel_idx[:, 0] * w + pixel_idx[:, 1]
+
+    return torch.index_select(flat_image, 0, flat_pix_idx), flat_pix_idx
+
+
+def flat_to_2d_image(pix_vals, pix_idx, shape):
+    """
+
+    Parameters
+    ----------
+    pix_vals
+    pix_idx
+    shape
+
+    Returns
+    -------
+
+    """
+    h = shape[0]
+    w = shape[1]
+    c = -1 if len(shape) == 2 else shape[2]
+
+    zeros = torch.zeros(h * w, c).type(torch.LongTensor)
+    zeros[pix_idx] = pix_vals
+    sparse_im = zeros.view(h, w, c)
+
+    return sparse_im
+
+
 def find_correspondences(material_mask, object_mask,
                          frac_correspondences=0.1,
                          non_correspondences_per_match=100,
@@ -84,7 +128,6 @@ def find_correspondences(material_mask, object_mask,
         object_mask = object_mask.type(dtype_long)
 
     material_mask_unique_vals = torch.unique(material_mask)
-    object_mask_unique_vals = torch.unique(object_mask)
 
     ones = torch.ones(h, w).type(dtype_float)
     zeros = torch.zeros(h, w).type(dtype_float)
@@ -112,11 +155,8 @@ def find_correspondences(material_mask, object_mask,
 
         correspondence_list.append((matched_pixels, non_matched_pixels, obj_matched_pixels))
 
-
     # TODO: Considerations
-    # 1.
+    # - Sample close to thin material regions
+    # - Think about proximity clustering
 
     return correspondence_list
-
-
-    pass

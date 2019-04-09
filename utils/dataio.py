@@ -1,38 +1,55 @@
 import os
 import re
+import sys
 import numpy as np
 import uuid
-from scipy import misc
 import numpy as np
+
 from PIL import Image
-import sys
+from imageio import imread, imsave
 
 
 def read(file):
-    if file.endswith('.float3'): return readFloat(file)
-    elif file.endswith('.flo'): return readFlow(file)
-    elif file.endswith('.ppm'): return readImage(file)
-    elif file.endswith('.pgm'): return readImage(file)
-    elif file.endswith('.png'): return readImage(file)
-    elif file.endswith('.jpg'): return readImage(file)
-    elif file.endswith('.pfm'): return read_pfm(file)[0]
-    else: raise Exception('don\'t know how to read %s' % file)
+    if file.endswith('.float3'):
+        return read_float(file)
+    elif file.endswith('.flo'):
+        return read_flow(file)
+    elif file.endswith('.ppm'):
+        return read_image(file)
+    elif file.endswith('.pgm'):
+        return read_image(file)
+    elif file.endswith('.png'):
+        return read_image(file)
+    elif file.endswith('.jpg'):
+        return read_image(file)
+    elif file.endswith('.pfm'):
+        return read_pfm(file)[0]
+    elif file.endswith('.webp'):
+        return read_image(file)
+    else:
+        raise Exception('don\'t know how to read %s' % file)
 
 
 def write(file, data):
-    if file.endswith('.float3'): return writeFloat(file, data)
-    elif file.endswith('.flo'): return writeFlow(file, data)
-    elif file.endswith('.ppm'): return writeImage(file, data)
-    elif file.endswith('.pgm'): return writeImage(file, data)
-    elif file.endswith('.png'): return writeImage(file, data)
-    elif file.endswith('.jpg'): return writeImage(file, data)
-    elif file.endswith('.pfm'): return write_pfm(file, data)
-    else: 
+    if file.endswith('.float3'):
+        return write_float(file, data)
+    elif file.endswith('.flo'):
+        return write_flow(file, data)
+    elif file.endswith('.ppm'):
+        return write_image(file, data)
+    elif file.endswith('.pgm'):
+        return write_image(file, data)
+    elif file.endswith('.png'):
+        return write_image(file, data)
+    elif file.endswith('.jpg'):
+        return write_image(file, data)
+    elif file.endswith('.pfm'):
+        return write_pfm(file, data)
+    else:
         raise Exception('don\'t know how to write %s' % file)
 
 
 def read_pfm(file):
-
     if type(file) is str:
         file = open(file, 'rb')
 
@@ -51,11 +68,11 @@ def read_pfm(file):
         raise Exception('Malformed PFM header.')
 
     scale = float(file.readline().decode("ascii").rstrip())
-    if scale < 0: # little-endian
+    if scale < 0:  # little-endian
         endian = '<'
         scale = -scale
     else:
-        endian = '>' # big-endian
+        endian = '>'  # big-endian
 
     data = np.frombuffer(file.read(), endian + 'f')
     shape = (height, width, 3) if color else (height, width)
@@ -75,9 +92,9 @@ def write_pfm(file, image, scale=1):
 
     image = np.flipud(image)
 
-    if len(image.shape) == 3 and image.shape[2] == 3: # color image
+    if len(image.shape) == 3 and image.shape[2] == 3:  # color image
         color = True
-    elif len(image.shape) == 2 or len(image.shape) == 3 and image.shape[2] == 1: # greyscale
+    elif len(image.shape) == 2 or len(image.shape) == 3 and image.shape[2] == 1:  # greyscale
         color = False
     else:
         raise Exception('Image must have H x W x 3, H x W x 1 or H x W dimensions.')
@@ -95,9 +112,9 @@ def write_pfm(file, image, scale=1):
     image.tofile(file)
 
 
-def readFlow(name):
+def read_flow(name):
     if name.endswith('.pfm') or name.endswith('.PFM'):
-        return read_pfm(name)[0][:,:,0:2]
+        return read_pfm(name)[0][:, :, 0:2]
 
     f = open(name, 'rb')
 
@@ -113,25 +130,25 @@ def readFlow(name):
     return flow.astype(np.float32)
 
 
-def readImage(name):
+def read_image(name):
     if name.endswith('.pfm') or name.endswith('.PFM'):
         data = read_pfm(name)[0]
-        if len(data.shape)==3:
-            return data[:,:,0:3]
+        if len(data.shape) == 3:
+            return data[:, :, 0:3]
         else:
             return data
 
-    return misc.imread(name)
+    return imread(name).astype(np.ndarray)
 
 
-def writeImage(name, data):
+def write_image(name, data):
     if name.endswith('.pfm') or name.endswith('.PFM'):
         return write_pfm(name, data, 1)
 
-    return misc.imsave(name, data)
+    return imsave(name, data)
 
 
-def writeFlow(name, flow):
+def write_flow(name, flow):
     f = open(name, 'wb')
     f.write('PIEH'.encode('utf-8'))
     np.array([flow.shape[1], flow.shape[0]], dtype=np.int32).tofile(f)
@@ -139,10 +156,10 @@ def writeFlow(name, flow):
     flow.tofile(f)
 
 
-def readFloat(name):
+def read_float(name):
     f = open(name, 'rb')
 
-    if(f.readline().decode("utf-8"))  != 'float\n':
+    if (f.readline().decode("utf-8")) != 'float\n':
         raise Exception('float file %s did not contain <float> keyword' % name)
 
     dim = int(f.readline())
@@ -163,11 +180,12 @@ def readFloat(name):
 
     return data
 
-def writeFloat(name, data):
+
+def write_float(name, data):
     f = open(name, 'wb')
 
-    dim=len(data.shape)
-    if dim>3:
+    dim = len(data.shape)
+    if dim > 3:
         raise Exception('bad float file dimension: %d' % dim)
 
     f.write(('float\n').encode('ascii'))
@@ -182,7 +200,7 @@ def writeFloat(name, data):
             f.write(('%d\n' % data.shape[i]).encode('ascii'))
 
     data = data.astype(np.float32)
-    if dim==2:
+    if dim == 2:
         data.tofile(f)
 
     else:
@@ -191,4 +209,3 @@ def writeFloat(name, data):
 
 if __name__ == "__main__":
     print(read)
-
