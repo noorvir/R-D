@@ -4,7 +4,7 @@ from math import inf
 from PIL import Image
 from torch.utils.data import Dataset
 
-from utils.nn.transformations import
+from utils.transformations import
 
 
 class DataPoint:
