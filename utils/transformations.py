@@ -107,6 +107,39 @@ def median(im=None, disk_size=2, adaptation='rgb'):
         return f(im)
 
 
+def downsample(im=None, size=None, adaptation='rgb', interpolation='linear'):
+    """
+
+    Parameters
+    ----------
+    im
+    size
+    adaptation
+    interpolation: str
+        One of ['linear', 'cubic', 'nearest'].
+
+    Returns
+    -------
+
+    """
+    assert size is None, "Must specify reshape size as tuple."
+
+    adapt = hsv_value if adaptation == 'hsv' else each_channel
+
+    intp = 'INTER_LINEAR' if interpolation == 'linear' else \
+           'INTER_CUBIC' if interpolation == 'cubic' else \
+           'INTER_NEAREST'
+
+    @adapt_rgb(adapt)
+    def f(image):
+        return cv2.resize(image, size, interpolation=intp)
+
+    if im is None:
+        return f
+    else:
+        return f(im)
+
+
 def bin_image(bins=(0, 25, 50, 75, 100, 125, 150, 175, 200, 225, 255)):
 
     def f(image):

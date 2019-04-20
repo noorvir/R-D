@@ -3,9 +3,11 @@ import os
 import h5py
 import tarfile
 import logging
+import webp
 import numpy as np
 from time import time, gmtime, strftime
 
+from os.path import join
 from math import inf, floor
 from PIL import Image
 from imageio import imread
@@ -13,6 +15,7 @@ from torch.utils.data import Dataset
 
 from utils.dataio import read_pfm
 from utils import transformations as transf
+from utils.dataset_tools import encode_webp, decode_webp
 
 # N.B. The baseline value is made up. The data-set does not provide it.
 BASELINE = 0.5
@@ -105,6 +108,7 @@ def tar_to_hdf5(tar_path, hdf5_path, max_size=5000, compression=9):
                                                              compression_opts=compression,
                                                              dtype=data_type),
                                           0]
+                datasets[dataset_name][0].attrs['format'] = suffix
 
             # Get index into dataset
             dataset, max_idx = datasets[dataset_name]
@@ -120,17 +124,19 @@ def tar_to_hdf5(tar_path, hdf5_path, max_size=5000, compression=9):
         # Prune
         for key, val in datasets.items():
             dataset, max_idx = val
-            datasets[key] = dataset.resize(max_idx, axis=0)
+            datasets[key] = dataset.resize(max_idx + 1, axis=0)
             logging.info("Pruned dataset %s to size %d points.\n" % (key, max_idx + 1))
 
     end_time = time() - start_time
-    logging.info("Tar to HDF5 conversion done in %s" %
-                 strftime("%H:%M:%S", gmtime(end_time)))
+    logging.info("*****Finished converting tarfile to HDF5 dataset*****\n\n"
+                 "HDF5 file saved at: %s\n"
+                 "Tar to HDF5 conversion done in %s" %
+                 (hdf5_path, strftime("%H:%M:%S", gmtime(end_time))))
 
 
 def create_thingnet_dataset(rgb_path, disparity_path, material_path,
-                            object_path, hdf5_path, resize_factor=1.0,
-                            compression=5, num_points=inf):
+                            object_path, hdf5_path, dataset_name, chunk_size,
+                            resize_factor=1.0, compression=5, num_points=inf):
     """
 
     Parameters
@@ -140,6 +146,8 @@ def create_thingnet_dataset(rgb_path, disparity_path, material_path,
     material_path: str
     object_path: str
     hdf5_path: str
+    dataset_name: str
+    chunk_size: int
     resize_factor: float
     compression: int
     num_points: int
@@ -148,107 +156,114 @@ def create_thingnet_dataset(rgb_path, disparity_path, material_path,
     -------
 
     """
-    with tarfile.open(rgb_path, 'r') as rgb_archive, \
-            tarfile.open(disparity_path, 'r') as disparity_archive, \
-            tarfile.open(material_path, 'r') as material_archive, \
-            tarfile.open(object_path, 'r') as object_archive, \
+    with h5py.File(rgb_path, 'r') as rgb_archive, \
+            h5py.File(disparity_path, 'r') as disparity_archive, \
+            h5py.File(material_path, 'r') as material_archive, \
+            h5py.File(object_path, 'r') as object_archive, \
             h5py.File(hdf5_path, 'w') as h5f:
 
-        # Get member names and filter
-        names = rgb_archive.getnames()
-        names = [name for name in names if ('15mm_focallength' not in name) and
-                                           ('scene_backwards' not in name) and
-                                           ('slow' not in name) and
-                                           ('right' not in name) and
-                                           (os.path.splitext(name)[-1] != "")]
+        def func(name):
+            if dataset_name in name: return True
 
-        if len(names) == 0:
-            return
+        for archive in [rgb_archive, disparity_archive, material_archive,
+                        object_archive]:
 
-        # Image details
-        _member = rgb_archive.getmember(names[0])
-        _data = rgb_archive.extractfile(_member)
-        image = imread(_data.read())
-        h, w, c = image.shape
-        h_out = floor(resize_factor * h)
-        w_out = floor(resize_factor * w)
+            assert archive.visit(func), ("Dataset %s does not exisit in " 
+                                         "archive %s. Exiting!" %
+                                         (dataset_name, archive.name))
 
-        h5_datasets = [h5f.create_dataset("rgb", (len(names), h_out, w_out, c),
-                                          compression="gzip",
-                                          compression_opts=compression),
-                       h5f.create_dataset("depth", (len(names), h_out, w_out),
-                                          compression="gzip",
-                                          compression_opts=compression),
-                       h5f.create_dataset("material", (len(names), h_out, w_out),
-                                          compression="gzip",
-                                          compression_opts=compression),
-                       h5f.create_dataset("object", (len(names), h_out, w_out),
-                                          compression="gzip",
-                                          compression_opts=compression)]
-
-        datapoint_idx = 0
-        logging.info("Starting tarfile to HDF5 conversion\n")
+        logging.info("Starting HDF5 dataset creation...\n")
         start_time = time()
 
-        for name in names:
-            substring, suffix = os.path.splitext(name)
-            common_substring = re.split('^([a-z_]*(?=/))', substring)[2]
+        # 1. Configure dataset properties
+        dataset_name = dataset_name if dataset_name[0] != "/" else dataset_name[1:]
 
-            # Get names
-            disparity_member_name = 'disparity' + common_substring
-            material_member_name = 'material_idx' + common_substring
-            object_member_name = '' + common_substring
+        rgb = rgb_archive[join(list(rgb_archive.keys())[0], dataset_name)]
+        material = material_archive[join(list(material_archive.keys())[0], dataset_name)]
+        obj = object_archive[join(list(object_archive.keys())[0], dataset_name)]
+        disparity = disparity_archive[join(list(disparity_archive.keys())[0], dataset_name)]
+        total_points = len(rgb)
 
-            # Get members from names
-            rgb_member = rgb_archive.getmember(name)
-            disparity_member = disparity_archive.getmember(disparity_member_name)
-            material_member = material_archive.getmember(material_member_name)
-            object_member = object_archive.getmember(object_member_name)
+        if num_points == inf:
+            num_points = total_points
 
-            member_num = 0
+        shape2d = disparity.shape
+        shape2d = (int(shape2d[0] * resize_factor), int(shape2d[1] * resize_factor))
 
-            # Read and add to HDF5
-            for member, archive in [(rgb_member, rgb_archive),
-                                    (disparity_member, disparity_archive),
-                                    (material_member, material_archive),
-                                    (object_member, object_archive)]:
+        if rgb.attrs['format'] == '.webp':
+            rgb_shape = ()
+        else:
+            rgb_shape = shape2d + (3,)
 
-                data = archive.extractfile(member)
+        mask_shape = (num_points,) + shape2d
 
-                if suffix == '.pfm':
-                    data, scale = read_pfm(data)
-                else:
-                    data = imread(data.read())  # read bytes
+        # 2. Create new HDF5 data-sets
+        logging.info("Creating data-set of %d points with chunk size %d.\n" %
+                     (num_points, chunk_size))
 
-                if member_num == 0:
-                    data = transf.downsample(data, (h_out, w_out))
-                else:
-                    data = transf.downsample(data, (h_out, w_out),
-                                             interpolation='nearest')
+        h5f.create_dataset('rgb', (num_points,) + rgb_shape, chunks=(chunk_size,) + rgb_shape,
+                           compression=rgb.compression, compression_opts=rgb.compression_opts,
+                           dtype=rgb.dtype)
+        h5f['rgb'].attrs['format'] = rgb.attrs['format']
 
-                if member_num == 1:
-                    # Convert to depth
-                    data = FOCAL_LENGTH * BASELINE / data
+        h5f.create_dataset('depth', mask_shape, chunks=(chunk_size,) + shape2d,
+                           compression=disparity.compression, compression_opts=compression,
+                           dtype=disparity.dtype)
+        h5f['depth'].attrs['format'] = disparity.attrs['format']
 
-                h5_datasets[member_num][datapoint_idx] = data
-                member_num += 1
+        h5f.create_dataset('material', mask_shape, chunks=(chunk_size,) + shape2d,
+                           compression=material.compression, compression_opts=compression,
+                           dtype=material.dtype)
+        h5f['material'].attrs['format'] = material.attrs['format']
 
-            if (datapoint_idx + 1) % 100 == 0:
-                logging.info("Adding datapoint %d of %d" % (datapoint_idx + 1,
-                                                            len(names)))
+        h5f.create_dataset('object', mask_shape, chunks=(chunk_size,) + shape2d,
+                           compression=obj.compression, compression_opts=compression,
+                           dtype=obj.dtype)
+        h5f['object'].attrs['format'] = obj.attrs['format']
 
-            datapoint_idx += 1
+        # 3. Convert disparity to depth
+        depth = FOCAL_LENGTH * BASELINE / disparity[:num_points]
 
-            if datapoint_idx >= num_points:
-                logging.info("Existing after %d points" % num_points)
-                break
+        # 4. Write to data-set - resize if specified
+        if resize_factor != 1:
+
+            for data, name in zip([rgb, depth, material, obj], ['rgb', 'depth', 'material', 'obj']):
+                resize_func = transf.downsample() if name == 'rgb' else \
+                    transf.downsample(interpolation='nearest')
+
+                logging.info("Resizing and writing %d %s images to shape: %s"
+                             % (num_points, name, (data.shape,)))
+
+                for i in range(num_points):
+                    if data.attrs['format'] == ".webp":
+                        np_img = decode_webp(data[i])                                # decode
+                        resized_img = resize_func(np_img)                            # resize
+                        bytes_img = encode_webp(resized_img, ret="bytes")            # encode
+                        h5f[name][i] = np.frombuffer(bytes_img, dtype=np.int8)       # assign
+                    else:
+                        h5f[name][i] = resize_func(data[i])
+
+                    if i % 100 == 0:
+                        logging.info("Processing %s datapoint number %d.\n" % (name, i))
+        else:
+            for data, name in zip([rgb, depth, material, obj], ['rgb', 'depth', 'material', 'obj']):
+                logging.info("Writing %d %s images" % (num_points, name))
+
+                for i in range(num_points):
+                    h5f[name][i] = data[i]
+
+                    if i % 100 == 0:
+                        logging.info("Processing %s datapoint number %d.\n" % (name, i))
+
+        # 5. Add meta-data
+        # TODO: add h5py attributes
 
         end_time = time() - start_time
-        logging.info("*****Finished converting tarfile to HDF5 dataset*****\n\n"
+        logging.info("*****Finished writing HDF5 dataset*****\n\n"
                      "HDF5 file saved at: %s\n"
                      "Data-points written: %d\n"
                      "Time taken: %s" % (hdf5_path,
-                                         datapoint_idx,
+                                         num_points,
                                          strftime("%H:%M:%S", gmtime(end_time))))
 
 
@@ -265,67 +280,25 @@ class SceneFlowDataset(Dataset):
     def __init__(self, root_path, split='train', use_shortcut=False,
                  clip_size=inf):
 
+        self.dataset_path = ""
         self.root = os.path.join(root_path, split)
-        self.data_paths = []
-
-        data_point_count = 0
-
-        if use_shortcut:
-            logging.warning("Creating database index assuming that every "
-                            "trajectory contains 300 datapoints and the names "
-                            "of datapoints are multiples of 25: 0, 25, 50 etc.")
-
-            num_subsets = len(os.listdir(self.root))
-
-            for subset in range(num_subsets):
-                num_seqs = len(os.listdir(os.path.join(self.root, str(subset))))
-                for seq in range(num_seqs):
-                    for j in range(0, 7500, 25):
-                        self.data_paths += [[os.path.join(self.root,
-                                                          str(subset),
-                                                          str(seq)), j]]
-
-        else:
-            for subset_dir in os.listdir(self.root):
-                subset_dir = os.path.join(self.root, subset_dir)
-
-                for seq_dir in os.listdir(subset_dir):
-                    seq_dir = os.path.join(subset_dir, seq_dir)
-
-                    data_dir = os.path.join(seq_dir, "depth")
-                    datapoint_names = os.listdir(data_dir)
-                    datapoint_paths = [[seq_dir, name[:-4]]
-                                       for name in datapoint_names]
-
-                    data_point_count += len(datapoint_names)
-
-                    if data_point_count > clip_size:
-                        eidx = data_point_count - clip_size
-                        datapoint_paths = datapoint_paths[:-eidx]
-                        self.data_paths += datapoint_paths
-                        return
-
-                    self.data_paths += datapoint_paths
 
     def __len__(self):
-        return len(self.data_paths)
+        with h5py.File(self.dataset_path, 'r') as ds:
+            return len(ds['rgb'])
 
-    def __getitem__(self, item):
+    def __getitem__(self, idx):
+        with h5py.File(self.dataset_path, 'r') as ds:
+            rgb = ds['rgb']
+            depth = ds['depth']
+            material = ds['material']
+            obj = ds['obj']
 
-        ppath = os.path.join(self.data_paths[item][0], 'photo',
-                             str(self.data_paths[item][1]) + ".jpg")
+        sample = {'images': image, 'labels': label}
 
-        dpath = os.path.join(self.data_paths[item][0], 'depth',
-                             str(self.data_paths[item][1]) + ".png")
-
-        ipath = os.path.join(self.data_paths[item][0], 'instance',
-                             str(self.data_paths[item][1]) + ".png")
-
-        pimage = Image.open(ppath)
-        dimage = Image.open(dpath)
-        iimage = Image.open(ipath)
-
-        return DataPoint(pimage, dimage, iimage)
+        if self.transform:
+            sample = self.transform(sample)
+        return sample
 
 #
 # # Loading from h5py
