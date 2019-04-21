@@ -8,11 +8,24 @@ from skimage.color.adapt_rgb import adapt_rgb
 from skimage.color.adapt_rgb import hsv_value, each_channel
 
 
+def compose(func_list):
+
+    def func(images, seed):
+        # probs = np.random.rand(len(func_list), seed)
+        # for image in images
+        #   for func, prob in zip(func_list, probs):
+        #       if random.rand(0,1, rand) < prob:
+        #          image = func(image)
+        #       else:
+        #           image
+        pass
+
+
 def gaussian_blur(im=None, k=5, sigma=1):
     kwargs = {'ksize': k,
               'sigmaX': sigma}
 
-    def blur(image):
+    def blur(image, prob=1.0):
         return cv2.GaussianBlur(image, **kwargs)
 
     if im is None:

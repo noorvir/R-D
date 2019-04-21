@@ -12,6 +12,7 @@ from math import inf, floor
 from PIL import Image
 from imageio import imread
 from torch.utils.data import Dataset
+from torchvision.transforms import Compose
 
 from utils.dataio import read_pfm
 from utils import transformations as transf
@@ -24,9 +25,9 @@ FOCAL_LENGTH = 0.035
 logging.getLogger().setLevel(logging.INFO)
 
 
-def create_thingnet_dataset(rgb_path, disparity_path, material_path,
-                            object_path, hdf5_path, dataset_name, chunk_size=1,
-                            resize_factor=1.0, compression=5, num_points=inf):
+def create_rdmo_dataset(rgb_path, disparity_path, material_path,
+                        object_path, hdf5_path, dataset_name, chunk_size=1,
+                        resize_factor=1.0, compression=5, num_points=inf):
     """
 
     Parameters
@@ -154,21 +155,15 @@ def create_thingnet_dataset(rgb_path, disparity_path, material_path,
                                          strftime("%H:%M:%S", gmtime(end_time))))
 
 
-class DataPoint:
-    def __init__(self, d, p, i):
-        self.__dict__ = {}
-        self.photo = d
-        self.depth = p
-        self.instance = i
+class RDMODataset(Dataset):
 
+    def __init__(self, dataset_path, rgb_transforms, depth_transforms,
+                 co_transforms, split='train', clip_size=inf):
 
-class SceneFlowDataset(Dataset):
-
-    def __init__(self, root_path, split='train', use_shortcut=False,
-                 clip_size=inf):
-
-        self.dataset_path = ""
-        self.root = os.path.join(root_path, split)
+        self.dataset_path = dataset_path
+        self.rgb_transform = transf.compose(rgb_transforms)
+        self.depth_transform = transf.compose(depth_transforms)
+        self.co_transform = transf.compose(co_transforms)
 
     def __len__(self):
         with h5py.File(self.dataset_path, 'r') as ds:
@@ -176,51 +171,27 @@ class SceneFlowDataset(Dataset):
 
     def __getitem__(self, idx):
         with h5py.File(self.dataset_path, 'r') as ds:
-            rgb = ds['rgb']
-            depth = ds['depth']
-            material = ds['material']
-            obj = ds['obj']
+            rgb = ds['rgb'][idx]
+            depth = ds['depth'][idx]
+            material = ds['material'][idx]
+            obj = ds['object'][idx]
 
-        sample = {'images': image, 'labels': label}
+        seed = np.random.randint(10000)
+        # TODO: there might be some correlation b/w noise in rgb and depth
+        rgb = self.rgb_transform(rgb, seed)
+        depth = self.depth_transform(depth, seed)
+        rgb, depth, material, obj = self.co_transform([rgb, depth, material, obj], seed)
 
-        if self.transform:
-            sample = self.transform(sample)
-        return sample
+        return rgb, depth, material, obj
 
-#
-# # Loading from h5py
-# class DeephomographyDataset(Dataset):
-#
-#
-# def __init__(self, hdf5file, imgs_key='images', labels_key='labels',
-#              transform=None):
-#     self.hdf5file = hdf5file
-#
-#     self.imgs_key = imgs_key
-#     self.labels_key = labels_key
-#     self.transform = transform
-#
-#
-# def __len__(self):
-#     # return len(self.db[self.labels_key])
-#     with h5py.File(self.hdf5file, 'r') as db:
-#         lens = len(db[self.labels_key])
-#     return lens
-#
-#
-# def __getitem__(self, idx):
-#     with h5py.File(self.hdf5file, 'r') as db:
-#         image = db[self.imgs_key][idx]
-#         label = db[self.labels_key][idx]
-#     sample = {'images': image, 'labels': label}
-#     if self.transform:
-#         sample = self.transform(sample)
-#     return sample
-#
-# # TODO:
-# # - Implement pyTorch dataset to access HDF5
-# # - implement triplet loss
-# # - train
+    def visualse(self, idx):
+
+        pass
+
+# TODO:
+# - Implement pyTorch dataset to access HDF5
+# - implement triplet loss
+# - train
 #
 # ###############################################################################
 # # TESTS
