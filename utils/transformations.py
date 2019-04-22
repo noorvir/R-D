@@ -4,8 +4,34 @@ Image transformations.
 import cv2
 import numpy as np
 
+from math import inf
 from skimage.color.adapt_rgb import adapt_rgb
 from skimage.color.adapt_rgb import hsv_value, each_channel
+
+
+def select_2d_idx(shape, num):
+    """
+
+    Parameters
+    ----------
+    shape
+    num
+
+    Returns
+    -------
+
+    """
+    rows = np.arange(shape[0])
+    cols = np.arange(shape[1])
+    num_pixels = shape[0] * shape[1]
+    xy = np.empty((shape[0], shape[1], 2), dtype=int)
+    xy[:, :, 0] = rows[:, None]
+    xy[:, :, 1] = cols
+    xy_flat = xy.reshape(-1, 2)
+    idx = np.random.choice(np.arange(num_pixels),
+                           size=num, replace=False)
+
+    return xy_flat[idx]
 
 
 def compose(func_list):
@@ -29,7 +55,7 @@ def compose(func_list):
 
         transf_images = []
         np.random.seed(seed)
-        probs = list(np.random.rand(1, len(func_list)))
+        probs = np.random.rand(len(func_list)).tolist()
 
         for image in images:
             for func, prob in zip(func_list, probs):
@@ -41,6 +67,57 @@ def compose(func_list):
         return transf_images if len(transf_images) > 1 else transf_images[0]
 
     return f
+
+
+def random_noise(im=None, frac=0.01, scale=0.05, dist='normal'):
+    """
+
+    Parameters
+    ----------
+    im
+    frac:
+    scale:
+    dist:
+
+    Returns
+    -------
+
+    """
+    assert frac <= 1.0, "frac must be <= 1.0"
+
+    def f(image):
+        shape = np.shape(image)
+        im_max = np.max(image)
+        num_pixels = shape[0] * shape[1]
+        num_noise_pixels = int(num_pixels * frac)
+        noise_image = np.zeros(shape)
+
+        noise_idx = select_2d_idx(shape, num_noise_pixels)
+        noise_idx_h = noise_idx[:, 0]
+        noise_idx_w = noise_idx[:, 1]
+
+        outshape = num_noise_pixels
+
+        if len(shape) > 2:
+            outshape = (num_noise_pixels, shape[2])
+
+        if dist == 'normal':
+            noise = np.random.normal(size=outshape) * scale * im_max
+        else:
+            noise = np.random.rand(*outshape) * scale * im_max
+
+        noise_image[noise_idx_h, noise_idx_w] = noise
+        noise_image = noise_image.reshape(shape)
+
+        ret = image + noise_image
+        ret = np.clip(ret, 0, im_max)
+
+        return ret
+
+    if im is None:
+        return f
+    else:
+        return f(im)
 
 
 def gaussian_blur(im=None, k=5, sigma=1):

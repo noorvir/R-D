@@ -16,7 +16,7 @@ from time import time, gmtime, strftime
 from torchvision.transforms import Compose
 
 from utils.dataio import read_pfm
-from utils import transformations as transf
+from utils import transformations as tfs
 from utils.dataset_tools import encode_webp, decode_webp, ImageDatasetStats
 
 # N.B. The baseline value is made up. The data-set does not provide it.
@@ -129,8 +129,8 @@ def create_rdmo_dataset(rgb_path, disparity_path, material_path,
             else:
                 dtype = data.attrs['format']
 
-            resize_func = transf.downsample() if name == 'rgb' else \
-                transf.downsample(interpolation='nearest')
+            resize_func = tfs.downsample() if name == 'rgb' else \
+                tfs.downsample(interpolation='nearest')
 
             logging.info("Writing %d %s images to shape: %s" % (num_points, name, (data.shape,)))
 
@@ -175,13 +175,12 @@ def create_rdmo_dataset(rgb_path, disparity_path, material_path,
 
 class RDMODataset(Dataset):
 
-    def __init__(self, dataset_path, rgb_transforms, depth_transforms,
-                 co_transforms, split='train'):
+    def __init__(self, dataset_path, split='train'):
 
         self.dataset_path = dataset_path
-        self.rgb_transform = transf.compose(rgb_transforms)
-        self.depth_transform = transf.compose(depth_transforms)
-        self.co_transform = transf.compose(co_transforms)
+        self.rgb_transform = tfs.compose([])
+        self.depth_transform = tfs.compose([])
+        self.co_transform = tfs.compose([])
 
         self.dataset_stats = self._get_dataset_stats()
 
@@ -220,12 +219,17 @@ class RDMODataset(Dataset):
             for name in names:
                 stats[name] = ImageDatasetStats()
                 stats[name].mean = ds[name].attrs['mean']
-                stats[name].std_dev = ds[name].attrs['std_dev ']
-                stats[name].var = ds[name].attrs['var ']
-                stats[name].min = ds[name].attrs['min ']
-                stats[name].max = ds[name].attrs['max ']
+                stats[name].std_dev = ds[name].attrs['std_dev']
+                stats[name].var = ds[name].attrs['var']
+                stats[name].min = ds[name].attrs['min']
+                stats[name].max = ds[name].attrs['max']
 
         return stats
+
+    def setup_transformations(self, rgb_transforms, depth_transforms, co_transforms):
+        self.rgb_transform = tfs.compose(rgb_transforms)
+        self.depth_transform = tfs.compose(depth_transforms)
+        self.co_transform = tfs.compose(co_transforms)
 
     def visualse(self, idx):
         images = self.__getitem__(idx)
