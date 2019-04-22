@@ -11,8 +11,58 @@ from utils.dataio import read_pfm
 from time import time, gmtime, strftime
 
 
-def encode_webp(image, quality=100, ret="numpy"):
+class ImageDatasetStats:
+    """
+    Stadard deviation update formula from:
+    https://stats.stackexchange.com/questions/55999/
+    is-it-possible-to-find-the-combined-standard-deviation/56000#56000
+    """
 
+    def __init__(self):
+        self.__dict__ = {}
+        self.mean = None
+        self.var = None
+        self.std_dev = None
+        self.min = None
+        self.max = None
+
+        self._num_pixels = None
+        self._is_initialised = False
+
+    def update(self, image):
+        if not self._is_initialised:
+            self.mean = np.mean(image)
+            self.var = np.var(image)
+            self.std_dev = np.std(image)
+            self.min = np.min(image)
+            self.max = np.max(image)
+            self._num_pixels = np.shape(image)[0] * np.shape(image)[1]
+            self._is_initialised = True
+
+        var1 = self.var
+        var2 = np.var(image)
+        mean1 = self.mean
+        mean2 = np.mean(image)
+
+        N = self._num_pixels
+        mean = (mean1 + mean2) / 2
+
+        numerator = (N - 1) * (var1 + var2) + \
+                    N * ((mean1 - mean) ** 2 + (mean2 - mean) ** 2)
+        var = numerator / (2 * N)
+
+        self.var = var
+        self.mean = mean
+        self.std_dev = np.sqrt(var)
+
+        if np.min(image) < self.min:
+            self.min = np.min(image)
+
+        if np.max(image) < self.max:
+            self.max = np.max(image)
+
+
+def encode_webp(image, quality=100, ret="numpy"):
     pic = webp.WebPPicture.from_numpy(image)
     config = webp.WebPConfig.new(quality=quality)
     buff = pic.encode(config).buffer()
@@ -34,9 +84,8 @@ def decode_webp(data):
 
 
 def shift_dataset(dataset):
-
-    if type(dataset) ==  h5py._hl.group.Group or \
-            type(dataset) ==  h5py._hl.files.File:
+    if type(dataset) == h5py._hl.group.Group or \
+            type(dataset) == h5py._hl.files.File:
 
         keys = dataset.keys()
 
@@ -141,4 +190,3 @@ def tar_to_hdf5(tar_path, hdf5_path, max_size=5000, compression=9):
                  "HDF5 file saved at: %s\n"
                  "Tar to HDF5 conversion done in %s" %
                  (hdf5_path, strftime("%H:%M:%S", gmtime(end_time))))
-

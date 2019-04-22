@@ -5,22 +5,23 @@ import tarfile
 import logging
 import webp
 import numpy as np
-from time import time, gmtime, strftime
 
 from os.path import join
 from math import inf, floor
 from PIL import Image
 from imageio import imread
 from torch.utils.data import Dataset
+from matplotlib import pyplot as plt
+from time import time, gmtime, strftime
 from torchvision.transforms import Compose
 
 from utils.dataio import read_pfm
 from utils import transformations as transf
-from utils.dataset_tools import encode_webp, decode_webp
+from utils.dataset_tools import encode_webp, decode_webp, ImageDatasetStats
 
 # N.B. The baseline value is made up. The data-set does not provide it.
 BASELINE = 0.5
-FOCAL_LENGTH = 0.035
+FOCAL_LENGTH = 1050     # 0.035 mm
 
 logging.getLogger().setLevel(logging.INFO)
 
@@ -75,6 +76,12 @@ def create_rdmo_dataset(rgb_path, disparity_path, material_path,
         disparity = disparity_archive[join(list(disparity_archive.keys())[0], dataset_name)]
         total_points = len(rgb)
 
+        # Stats
+        dataset_stats = {'rgb': ImageDatasetStats(),
+                         'depth': ImageDatasetStats(),
+                         'material': ImageDatasetStats(),
+                         'obj': ImageDatasetStats()}
+
         if num_points == inf:
             num_points = total_points
 
@@ -107,44 +114,51 @@ def create_rdmo_dataset(rgb_path, disparity_path, material_path,
                            dtype=material.dtype)
         h5f['material'].attrs['format'] = material.attrs['format']
 
-        h5f.create_dataset('object', mask_shape, chunks=(chunk_size,) + shape2d,
+        h5f.create_dataset('obj', mask_shape, chunks=(chunk_size,) + shape2d,
                            compression=obj.compression, compression_opts=compression,
                            dtype=obj.dtype)
-        h5f['object'].attrs['format'] = obj.attrs['format']
+        h5f['obj'].attrs['format'] = obj.attrs['format']
 
         # 3. Convert disparity to depth
         depth = FOCAL_LENGTH * BASELINE / disparity[:num_points]
 
-        # 4. Write to data-set - resize if specified
-        if resize_factor != 1:
+        for data, name in zip([rgb, depth, material, obj], ['rgb', 'depth', 'material', 'obj']):
 
-            for data, name in zip([rgb, depth, material, obj], ['rgb', 'depth', 'material', 'obj']):
-                resize_func = transf.downsample() if name == 'rgb' else \
-                    transf.downsample(interpolation='nearest')
+            if name == 'depth':
+                dtype = np.float32
+            else:
+                dtype = data.attrs['format']
 
-                logging.info("Resizing and writing %d %s images to shape: %s"
-                             % (num_points, name, (data.shape,)))
+            resize_func = transf.downsample() if name == 'rgb' else \
+                transf.downsample(interpolation='nearest')
 
-                for i in range(num_points):
-                    if data.attrs['format'] == ".webp":
-                        np_img = decode_webp(data[i])                                # decode
-                        resized_img = resize_func(np_img)                            # resize
-                        bytes_img = encode_webp(resized_img, ret="bytes")            # encode
-                        h5f[name][i] = np.frombuffer(bytes_img, dtype=np.int8)       # assign
-                    else:
-                        h5f[name][i] = resize_func(data[i])
+            logging.info("Writing %d %s images to shape: %s" % (num_points, name, (data.shape,)))
 
-                    if i % 100 == 0:
-                        logging.info("Processing %s datapoint number %d.\n" % (name, i))
-        else:
-            for data, name in zip([rgb, depth, material, obj], ['rgb', 'depth', 'material', 'object']):
-                logging.info("Writing %d %s images" % (num_points, name))
+            for i in range(num_points):
+                curr_data = data[i]
 
-                for i in range(num_points):
-                    h5f[name][i] = data[i]
+                if dtype == ".webp":
+                    curr_data = decode_webp(data[i])                        # decode
 
-                    if i % 100 == 0:
-                        logging.info("Processing %s datapoint number %d.\n" % (name, i))
+                if resize_factor != 1:
+                    curr_data = resize_func(curr_data)                      # resize
+
+                dataset_stats[name].update(curr_data)
+
+                if dtype == ".webp":
+                    curr_data = encode_webp(curr_data, ret="bytes")         # encode
+                    h5f[name][i] = np.frombuffer(curr_data, dtype=np.int8)  # assign
+                else:
+                    h5f[name][i] = curr_data
+
+                if i % 100 == 0:
+                    logging.info("Processing %s datapoint number %d.\n" % (name, i))
+
+            h5f[name].attrs['mean'] = dataset_stats[name].mean
+            h5f[name].attrs['std_dev'] = dataset_stats[name].std_dev
+            h5f[name].attrs['var'] = dataset_stats[name].var
+            h5f[name].attrs['min'] = dataset_stats[name].min
+            h5f[name].attrs['max'] = dataset_stats[name].max
 
         end_time = time() - start_time
         logging.info("\n\n*****Finished writing HDF5 dataset*****\n\n"
@@ -155,15 +169,21 @@ def create_rdmo_dataset(rgb_path, disparity_path, material_path,
                                          strftime("%H:%M:%S", gmtime(end_time))))
 
 
+# *************************************************************************************************
+# RGB, Depth, Material, Object - PyTorch data-set access
+# *************************************************************************************************
+
 class RDMODataset(Dataset):
 
     def __init__(self, dataset_path, rgb_transforms, depth_transforms,
-                 co_transforms, split='train', clip_size=inf):
+                 co_transforms, split='train'):
 
         self.dataset_path = dataset_path
         self.rgb_transform = transf.compose(rgb_transforms)
         self.depth_transform = transf.compose(depth_transforms)
         self.co_transform = transf.compose(co_transforms)
+
+        self.dataset_stats = self._get_dataset_stats()
 
     def __len__(self):
         with h5py.File(self.dataset_path, 'r') as ds:
@@ -174,22 +194,49 @@ class RDMODataset(Dataset):
             rgb = ds['rgb'][idx]
             depth = ds['depth'][idx]
             material = ds['material'][idx]
-            obj = ds['object'][idx]
+            obj = ds['obj'][idx]
 
-        seed = np.random.randint(10000)
+        rgb = decode_webp(rgb)
+
         # TODO: there might be some correlation b/w noise in rgb and depth
-        rgb = self.rgb_transform(rgb, seed)
-        depth = self.depth_transform(depth, seed)
-        rgb, depth, material, obj = self.co_transform([rgb, depth, material, obj], seed)
+        rgb = self.rgb_transform(rgb, seed=np.random.randint(10000))
+        depth = self.depth_transform(depth, seed=np.random.randint(10000))
+        rgb, depth, material, obj = self.co_transform([rgb, depth, material, obj],
+                                                      seed=np.random.randint(10000))
 
         return rgb, depth, material, obj
 
-    def visualse(self, idx):
+    def _get_dataset_stats(self):
+        """
 
-        pass
+        Returns
+        -------
+
+        """
+        stats = {}
+        names = ['rgb', 'depth', 'material', 'obj']
+
+        with h5py.File(self.dataset_path, 'r') as ds:
+            for name in names:
+                stats[name] = ImageDatasetStats()
+                stats[name].mean = ds[name].attrs['mean']
+                stats[name].std_dev = ds[name].attrs['std_dev ']
+                stats[name].var = ds[name].attrs['var ']
+                stats[name].min = ds[name].attrs['min ']
+                stats[name].max = ds[name].attrs['max ']
+
+        return stats
+
+    def visualse(self, idx):
+        images = self.__getitem__(idx)
+        fig, axes = plt.subplots(2, 2)
+
+        for image, axe in zip(images, axes.reshape(-1)):
+            axe.imshow(image)
+
+        plt.show()
 
 # TODO:
-# - Implement pyTorch dataset to access HDF5
 # - implement triplet loss
 # - train
 #

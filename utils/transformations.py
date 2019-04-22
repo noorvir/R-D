@@ -9,20 +9,42 @@ from skimage.color.adapt_rgb import hsv_value, each_channel
 
 
 def compose(func_list):
+    """
+    Create pipeline to apply a series of transformations to an image/images.
 
-    def func(images, seed):
-        # probs = np.random.rand(len(func_list), seed)
-        # for image in images
-        #   for func, prob in zip(func_list, probs):
-        #       if random.rand(0,1, rand) < prob:
-        #          image = func(image)
-        #       else:
-        #           image
-        pass
+    Parameters
+    ----------
+    func_list
+
+    Returns
+    -------
+
+    """
+    assert type(func_list) is list, ("Argument to compose function"
+                                         "must be a list of functions.")
+
+    def f(images, seed):
+        if type(images) is not list:
+            images = [images]
+
+        transf_images = []
+        np.random.seed(seed)
+        probs = list(np.random.rand(1, len(func_list)))
+
+        for image in images:
+            for func, prob in zip(func_list, probs):
+                if 0.5 < prob:
+                    image = func(image)
+
+            transf_images.append(image)
+
+        return transf_images if len(transf_images) > 1 else transf_images[0]
+
+    return f
 
 
 def gaussian_blur(im=None, k=5, sigma=1):
-    kwargs = {'ksize': k,
+    kwargs = {'ksize': (k, k),
               'sigmaX': sigma}
 
     def blur(image, prob=1.0):
@@ -34,8 +56,20 @@ def gaussian_blur(im=None, k=5, sigma=1):
         return blur(im)
 
 
-def normalise(im=None, max_val=1, log_scale=False, adaptation='rgb'):
+def random_dropout(im=None, dropout_prob=0.3):
+
+    def dropout(image):
+        pass
+
+    if im is None:
+        return dropout
+    else:
+        return dropout(im)
+
+
+def scale_min_max(im=None, max_val=1, log_scale=False, adaptation='rgb'):
     """
+    Normalise to range [0, 1].
 
     Parameters
     ----------
@@ -57,6 +91,53 @@ def normalise(im=None, max_val=1, log_scale=False, adaptation='rgb'):
             image = np.log10(np.clip(image, 0.001, 10 ** 10))
 
         return max_val * (image - image.min())/(image.max() - image.min())
+
+    if im is None:
+        return f
+    else:
+        return f(im)
+
+
+def normalise(im=None, mean=None, std_dev=None):
+    """
+    Standard score normalisation.
+
+    Parameters
+    ----------
+    im
+    mean
+    std_dev
+
+    Returns
+    -------
+
+    """
+
+    assert mean is not None, "Must provide data-set mean for normalisation.\n"
+    assert std_dev is not None, "Must provide data-set std_dev for normalisation.\n"
+
+    def f(image):
+        return (image - mean)/std_dev
+
+    if im is None:
+        return f
+    else:
+        return f(im)
+
+
+def flip_vertical(im=None):
+    def f(image):
+        return cv2.flip(image, flipCode=0)
+
+    if im is None:
+        return f
+    else:
+        return f(im)
+
+
+def flip_horizontal(im=None):
+    def f(image):
+        return cv2.flip(image, flipCode=1)
 
     if im is None:
         return f

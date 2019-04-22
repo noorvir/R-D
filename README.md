@@ -16,12 +16,19 @@ _*Losses*_:
 - Start with pixel-wise cross-entropy
 - Try Dice-loss (balances out classes and small object but might lead to 
     unstable gradients)  
-
+- Triplet loss for dense correspondence
 
 # Outline
 
 *SceneFlow Dataset for ThingNet*
 
 - Contruct HDF5 dataset from tarfiles 
-    - draw matches and non-matches for each frame
+    - construct image pairs for use at training (rgb, depth, material_image, object_image)
+    - maybe down sample images (540, 960) -> (360, 640) or even (270, 480)
+
+- At training time, draw matches and non-matches for each frame (randomly)
+
+*Consideraions*
+
+- Might want to start of with really low resolution image and move to high res later
     
