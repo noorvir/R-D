@@ -28,7 +28,8 @@ logging.getLogger().setLevel(logging.INFO)
 
 def create_rdmo_dataset(rgb_path, disparity_path, material_path,
                         object_path, hdf5_path, dataset_name, chunk_size=1,
-                        resize_factor=1.0, compression=5, num_points=inf):
+                        resize_factor=1.0, compression=5, num_points=inf,
+                        train_val_split=(0.8, 0.2), seed=140693):
     """
 
     Parameters
@@ -43,11 +44,15 @@ def create_rdmo_dataset(rgb_path, disparity_path, material_path,
     resize_factor: float
     compression: int
     num_points: int
+    train_val_split: tuple(float, float)
+    seed: int
 
     Returns
     -------
 
     """
+    assert np.sum(train_val_split) == 1, "Train/val split must add up to 1.0."
+
     with h5py.File(rgb_path, 'r') as rgb_archive, \
             h5py.File(disparity_path, 'r') as disparity_archive, \
             h5py.File(material_path, 'r') as material_archive, \
@@ -134,6 +139,7 @@ def create_rdmo_dataset(rgb_path, disparity_path, material_path,
 
             logging.info("Writing %d %s images to shape: %s" % (num_points, name, (data.shape,)))
 
+            # 4. Iterate and add to data-set
             for i in range(num_points):
                 curr_data = data[i]
 
@@ -160,6 +166,15 @@ def create_rdmo_dataset(rgb_path, disparity_path, material_path,
             h5f[name].attrs['min'] = dataset_stats[name].min
             h5f[name].attrs['max'] = dataset_stats[name].max
 
+        # 6. Create train/val/test indices
+        idx = np.arange(num_points)
+        np.random.seed(seed)
+        np.random.shuffle(idx)
+        split_idx = int(train_val_split[1] * num_points)
+        train_idx, val_idx = idx[: split_idx], idx[split_idx:]
+        h5f.attrs['train_idx'] = train_idx
+        h5f.attrs['val_idx'] = val_idx
+
         end_time = time() - start_time
         logging.info("\n\n*****Finished writing HDF5 dataset*****\n\n"
                      "HDF5 file saved at: %s\n"
@@ -175,14 +190,17 @@ def create_rdmo_dataset(rgb_path, disparity_path, material_path,
 
 class RDMODataset(Dataset):
 
-    def __init__(self, dataset_path, split='train'):
+    def __init__(self, dataset_path):
 
         self.dataset_path = dataset_path
         self.rgb_transform = tfs.compose([])
         self.depth_transform = tfs.compose([])
         self.co_transform = tfs.compose([])
-
         self.dataset_stats = self._get_dataset_stats()
+
+        with h5py.File(self.dataset_path, 'r') as ds:
+            self.train_idx = ds.attrs['train_idx']
+            self.val_idx = ds.attrs['val_idx']
 
     def __len__(self):
         with h5py.File(self.dataset_path, 'r') as ds:
