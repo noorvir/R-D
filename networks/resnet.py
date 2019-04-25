@@ -1,7 +1,6 @@
-import functools
 import torch.nn as nn
 
-# from utils.pyt_utils import load_model
+from utils.nn.network_tools import load_model
 
 
 __all__ = ['ResNet', 'resnet18', 'resnet34', 'resnet50', 'resnet101',
@@ -151,12 +150,11 @@ class ResNet(nn.Module):
                 nn.Conv2d(self.inplanes, planes * block.expansion,
                           kernel_size=1, stride=stride, bias=False),
                 norm_layer(planes * block.expansion, eps=bn_eps,
-                           momentum=bn_momentum),
-            )
+                           momentum=bn_momentum),)
 
-        layers = []
-        layers.append(block(self.inplanes, planes, stride, norm_layer, bn_eps,
-                            bn_momentum, downsample, inplace))
+        layers = [block(self.inplanes, planes, stride, norm_layer, bn_eps,
+                        bn_momentum, downsample, inplace)]
+
         self.inplanes = planes * block.expansion
         for i in range(1, blocks):
             layers.append(block(self.inplanes, planes,
@@ -172,13 +170,13 @@ class ResNet(nn.Module):
         x = self.maxpool(x)
 
         blocks = []
-        x = self.layer1(x);
+        x = self.layer1(x)
         blocks.append(x)
-        x = self.layer2(x);
+        x = self.layer2(x)
         blocks.append(x)
-        x = self.layer3(x);
+        x = self.layer3(x)
         blocks.append(x)
-        x = self.layer4(x);
+        x = self.layer4(x)
         blocks.append(x)
 
         return blocks

@@ -1,9 +1,16 @@
 import torch.nn as nn
 import torch.nn.functional as F
 
-from networks import resnet18
-from dataloaders import SceneNetDataset
-from utils.nn.segmentation import ConvBnRelu, AttentionRefinement, FeatureFusion
+from networks.resnet import resnet18
+from utils.nn.segmentation_tools import ConvBnRelu, AttentionRefinement, FeatureFusion
+
+
+class config:
+    __dict__ = {}
+
+
+config.bn_eps = 100
+config.bn_momentum = 0.5
 
 
 class ThingNet(nn.Module):
@@ -55,15 +62,15 @@ class ThingNet(nn.Module):
 
         if is_training:
             heads = [ThingNetHead(conv_channel, num_classes, 2,
-                                 True, norm_layer),
+                                  True, norm_layer),
                      ThingNetHead(conv_channel, num_classes, 1,
-                                 True, norm_layer),
+                                  True, norm_layer),
                      ThingNetHead(conv_channel * 2, num_classes, 1,
-                                 False, norm_layer)]
+                                  False, norm_layer)]
         else:
             heads = [None, None,
                      ThingNetHead(conv_channel * 2, num_classes, 1,
-                                 False, norm_layer)]
+                                  False, norm_layer)]
 
         self.ffm = FeatureFusion(conv_channel * 2, conv_channel * 2,
                                  1, norm_layer)
