@@ -14,13 +14,14 @@ config.bn_momentum = 0.5
 
 
 class ThingNet(nn.Module):
-    def __init__(self, num_classes, is_training, criterion, ohem_criterion,
+    def __init__(self, descriptor_dim, is_training, 
+                 criterion=None, ohem_criterion=None,
                  pretrained_model=None, norm_layer=nn.BatchNorm2d):
         """
 
         Parameters
         ----------
-        num_classes
+        descriptor_dim
         is_training
         criterion
         ohem_criterion
@@ -61,15 +62,15 @@ class ThingNet(nn.Module):
                               has_relu=True, has_bias=False)]
 
         if is_training:
-            heads = [ThingNetHead(conv_channel, num_classes, 2,
+            heads = [ThingNetHead(conv_channel, descriptor_dim, 2,
                                   True, norm_layer),
-                     ThingNetHead(conv_channel, num_classes, 1,
+                     ThingNetHead(conv_channel, descriptor_dim, 1,
                                   True, norm_layer),
-                     ThingNetHead(conv_channel * 2, num_classes, 1,
+                     ThingNetHead(conv_channel * 2, descriptor_dim, 1,
                                   False, norm_layer)]
         else:
             heads = [None, None,
-                     ThingNetHead(conv_channel * 2, num_classes, 1,
+                     ThingNetHead(conv_channel * 2, descriptor_dim, 1,
                                   False, norm_layer)]
 
         self.ffm = FeatureFusion(conv_channel * 2, conv_channel * 2,
@@ -129,7 +130,7 @@ class ThingNet(nn.Module):
 
 
 class SpatialPath(nn.Module):
-    def __init__(self, in_planes, num_classes, norm_layer=nn.BatchNorm2d):
+    def __init__(self, in_planes, descriptor_dim, norm_layer=nn.BatchNorm2d):
         super(SpatialPath, self).__init__()
         inner_channel = 64
         self.conv_7x7 = ConvBnRelu(in_planes, inner_channel, 7, 2, 3,
@@ -141,7 +142,7 @@ class SpatialPath(nn.Module):
         self.conv_3x3_2 = ConvBnRelu(inner_channel, inner_channel, 3, 2, 1,
                                      has_bn=True, norm_layer=norm_layer,
                                      has_relu=True, has_bias=False)
-        self.conv_1x1 = ConvBnRelu(inner_channel, num_classes, 1, 1, 0,
+        self.conv_1x1 = ConvBnRelu(inner_channel, descriptor_dim, 1, 1, 0,
                                    has_bn=True, norm_layer=norm_layer,
                                    has_relu=True, has_bias=False)
 
@@ -155,14 +156,14 @@ class SpatialPath(nn.Module):
 
 
 class ThingNetHead(nn.Module):
-    def __init__(self, in_planes, num_classes, scale,
+    def __init__(self, in_planes, descriptor_dim, scale,
                  is_aux=False, norm_layer=nn.BatchNorm2d):
         """
 
         Parameters
         ----------
         in_planes
-        num_classes
+        descriptor_dim
         scale
         is_aux
         norm_layer
@@ -178,10 +179,10 @@ class ThingNetHead(nn.Module):
                                        has_relu=True, has_bias=False)
         # self.dropout = nn.Dropout(0.1)
         if is_aux:
-            self.conv_1x1 = nn.Conv2d(128, num_classes, kernel_size=1,
+            self.conv_1x1 = nn.Conv2d(128, descriptor_dim, kernel_size=1,
                                       stride=1, padding=0)
         else:
-            self.conv_1x1 = nn.Conv2d(64, num_classes, kernel_size=1,
+            self.conv_1x1 = nn.Conv2d(64, descriptor_dim, kernel_size=1,
                                       stride=1, padding=0)
         self.scale = scale
 
@@ -198,5 +199,5 @@ class ThingNetHead(nn.Module):
 
 
 if __name__ == "__main__":
-    model = ThingNet(1000, None)
+    model = ThingNet(10, False)
     # print(model)

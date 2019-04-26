@@ -15,6 +15,7 @@ import numpy as np
 from torch.utils.data import DataLoader
 from torch.utils.data.sampler import SubsetRandomSampler
 
+from networks.thingnet import ThingNet
 from utils import transformations as tfs
 from dataloaders.sceneflow import RDMODataset
 
@@ -25,7 +26,7 @@ logging.getLogger().setLevel(logging.INFO)
 class ThingNetTrainer:
 
     def __init__(self):
-        self.model = None
+        self.model = ThingNet(descriptor_dim=10, False)
         self.optimiser = None
         self.loss = None
         self.scheduler = None
@@ -42,7 +43,7 @@ class ThingNetTrainer:
         # 1. Transformations
         rgb_transformations = [tfs.gaussian_blur(), tfs.random_noise(),
                                tfs.normalise(mean=dset['rgb'].mean, std_dev=dset['rgb'].std_dev)]
-        depth_transformations = [tfs.gaussian_blur(), tfs.random_noise()
+        depth_transformations = [tfs.gaussian_blur(), tfs.random_noise(),
                                  tfs.normalise(mean=dset['rgb'].mean, std_dev=dset['rgb'].std_dev)]
         co_transformations = [tfs.flip_horizontal(), tfs.flip_vertical()]
 
@@ -101,8 +102,20 @@ class ThingNetTrainer:
                 # TODO: plotting
                 # TODO: saving model checkpoints
 
+        def infer(self, inputs):
+            self.model.eval()
+            return self.model(inputs)
+
     def visualise(self):
         # Visualise model predictions
         pass
 
 
+# TODO Next
+# Allocate variables/Tensors onto the correct device
+# Pass the inputs through the model and make sure it runs
+# Set-up correspondence finder
+# compute loss using the output of the correspondence finder
+# Update weights
+# Implement config parser
+# Configure model and training from config file
