@@ -73,12 +73,12 @@ def encode_webp(image, quality=100, ret="numpy"):
         return buff
 
 
-def decode_webp(data):
+def decode_webp(data, color_mode=webp.WebPColorMode.RGB):
     if type(data) == np.ndarray:
         data = data.tobytes()
 
     webp_data = webp.WebPData.from_buffer(data)
-    np_data = webp_data.decode()
+    np_data = webp_data.decode(color_mode=color_mode)
 
     return np_data
 

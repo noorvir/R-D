@@ -1,7 +1,7 @@
 import torch.nn as nn
 import torch.nn.functional as F
 
-from networks.resnet import resnet18
+from networks.resnet import resnet
 from utils.nn.segmentation_tools import ConvBnRelu, AttentionRefinement, FeatureFusion
 
 
@@ -14,13 +14,14 @@ config.bn_momentum = 0.5
 
 
 class ThingNet(nn.Module):
-    def __init__(self, descriptor_dim, is_training, 
+    def __init__(self, input_ch, descriptor_dim, is_training,
                  criterion=None, ohem_criterion=None,
                  pretrained_model=None, norm_layer=nn.BatchNorm2d):
         """
 
         Parameters
         ----------
+        input_ch
         descriptor_dim
         is_training
         criterion
@@ -30,15 +31,17 @@ class ThingNet(nn.Module):
         """
         super(ThingNet, self).__init__()
 
+        self.input_ch = input_ch
         self.business_layer = []
         self.is_training = is_training
 
-        self.context_path = resnet18(pretrained_model, norm_layer=norm_layer,
-                                     bn_eps=config.bn_eps,
-                                     bn_momentum=config.bn_momentum,
-                                     deep_stem=False, stem_width=64)
+        self.context_path = resnet(18, self.input_ch, pretrained_model,
+                                   norm_layer=norm_layer,
+                                   bn_eps=config.bn_eps,
+                                   bn_momentum=config.bn_momentum,
+                                   deep_stem=False, stem_width=64)
 
-        self.spatial_path = SpatialPath(3, 128, norm_layer)
+        self.spatial_path = SpatialPath(self.input_ch, 128, norm_layer)
 
         conv_channel = 128
         self.global_context = nn.Sequential(nn.AdaptiveAvgPool2d(1),

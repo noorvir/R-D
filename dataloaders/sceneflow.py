@@ -192,6 +192,7 @@ class RDMODataset(Dataset):
 
     def __init__(self, dataset_path):
 
+        self.device = "cpu"
         self.dataset_path = dataset_path
         self.rgb_transform = tfs.compose([])
         self.depth_transform = tfs.compose([])

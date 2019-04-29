@@ -26,25 +26,27 @@ logging.getLogger().setLevel(logging.INFO)
 class ThingNetTrainer:
 
     def __init__(self):
-        self.model = ThingNet(descriptor_dim=10, False)
+
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.model = ThingNet(4, 10, False).to(self.device)
         self.optimiser = None
         self.loss = None
         self.scheduler = None
-        self.batch_size = 10
+        self.batch_size = 1
         self.dataloader = self._setup_data()
 
-        self.device = 'GPU'
         self.val_freq = 100
 
     def _setup_data(self):
         """Set-up transformations, sampler and returns Dataloader object"""
-        dset = RDMODataset("")
+        dset = RDMODataset("/home/noorvir/Documents/data/SceneFlow/thing_net.hdf5")
+        stats = dset.dataset_stats
 
         # 1. Transformations
         rgb_transformations = [tfs.gaussian_blur(), tfs.random_noise(),
-                               tfs.normalise(mean=dset['rgb'].mean, std_dev=dset['rgb'].std_dev)]
+                               tfs.normalise(mean=stats['rgb'].mean, std_dev=stats['rgb'].std_dev)]
         depth_transformations = [tfs.gaussian_blur(), tfs.random_noise(),
-                                 tfs.normalise(mean=dset['rgb'].mean, std_dev=dset['rgb'].std_dev)]
+                                 tfs.normalise(mean=stats['rgb'].mean, std_dev=stats['rgb'].std_dev)]
         co_transformations = [tfs.flip_horizontal(), tfs.flip_vertical()]
 
         dset.setup_transformations(rgb_transformations, depth_transformations, co_transformations)
@@ -52,10 +54,10 @@ class ThingNetTrainer:
         # 2. Sampler
         train_sampler = SubsetRandomSampler(dset.train_idx)
         val_sampler = SubsetRandomSampler(dset.val_idx)
-        dataloader = {'train': torch.utils.data.Dataloader(dset, batch_size=self.batch_size,
-                                                           sampler=train_sampler, num_workers=6),
-                      'val': torch.utils.data.Dataloader(dset, batch_size=self.batch_size,
-                                                         sampler=val_sampler, num_workers=6)}
+        dataloader = {'train': DataLoader(dset, batch_size=self.batch_size, sampler=train_sampler,
+                                          num_workers=6),
+                      'val': DataLoader(dset, batch_size=self.batch_size, sampler=val_sampler,
+                                        num_workers=6)}
         return dataloader
 
     def get_loss(self, output, mask_batch, obj_batch):
@@ -102,17 +104,27 @@ class ThingNetTrainer:
                 # TODO: plotting
                 # TODO: saving model checkpoints
 
-        def infer(self, inputs):
-            self.model.eval()
-            return self.model(inputs)
+    def infer(self, inputs):
+        self.model.eval()
+        return self.model(inputs)
 
-    def visualise(self):
+    def visualise(self, num=None):
+        if num is None:
+            num = self.batch_size
+        elif num >= self.batch_size:
+            num = self.batch_size
+
+
         # Visualise model predictions
         pass
 
 
+if __name__ == "__main__":
+    trainer = ThingNetTrainer()
+    trainer.train()
 # TODO Next
 # Allocate variables/Tensors onto the correct device
+# Setup number of inputs as a variable and load network weights accordingly
 # Pass the inputs through the model and make sure it runs
 # Set-up correspondence finder
 # compute loss using the output of the correspondence finder
