@@ -8,14 +8,17 @@ data_transforms = transforms.Compose([
 
 """
 import torch
+import torch.nn as nn
 import torchvision
 import logging
 import numpy as np
 
+from tqdm import tqdm
 from torch.utils.data import DataLoader
 from torch.utils.data.sampler import SubsetRandomSampler
 
 from networks.thingnet import ThingNet
+from networks.fcn import FCN
 from utils import transformations as tfs
 from dataloaders.sceneflow import RDMODataset
 
@@ -23,19 +26,45 @@ from dataloaders.sceneflow import RDMODataset
 logging.getLogger().setLevel(logging.INFO)
 
 
+class DataTypes:
+    def __init__(self, device='cpu'):
+        self.__dict__ = {}
+
+        if device.lower() == 'cpu':
+            self.float = torch.FloatTensor
+            self.double = torch.DoubleTensor
+            self.half = torch.HalfTensor
+            self.char = torch.CharTensor
+            self.short = torch.ShortTensor
+            self.int = torch.IntTensor
+            self.long = torch.LongTensor
+        else:
+            self.float = torch.cuda.FloatTensor
+            self.double = torch.cuda.DoubleTensor
+            self.half = torch.cuda.HalfTensor
+            self.char = torch.cuda.CharTensor
+            self.short = torch.cuda.ShortTensor
+            self.int = torch.cuda.IntTensor
+            self.long = torch.cuda.LongTensor
+
+
 class ThingNetTrainer:
 
     def __init__(self):
 
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.model = ThingNet(4, 10, False).to(self.device)
-        self.optimiser = None
+        self.device = torch.device("cuda") if torch.cuda.is_available() else "cpu"
+        self.dtypes = DataTypes('gpu')
+        # self.model = ThingNet(4, 10, False)#.to(self.device)
+        self.batch_size = 10
+        self.model = FCN((self.batch_size, 4, 540, 960), 10).to(self.device)
+        self.optimiser = self.get_optimiser(self.model.parameters(), 0.0003, 1.0e-4)
         self.loss = None
         self.scheduler = None
-        self.batch_size = 1
         self.dataloader = self._setup_data()
+        self._data_iter = {'train': iter(self.dataloader['train']),
+                           'val': iter(self.dataloader['val'])}
 
-        self.val_freq = 100
+        self.val_freq = 10
 
     def _setup_data(self):
         """Set-up transformations, sampler and returns Dataloader object"""
@@ -46,8 +75,10 @@ class ThingNetTrainer:
         rgb_transformations = [tfs.gaussian_blur(), tfs.random_noise(),
                                tfs.normalise(mean=stats['rgb'].mean, std_dev=stats['rgb'].std_dev)]
         depth_transformations = [tfs.gaussian_blur(), tfs.random_noise(),
-                                 tfs.normalise(mean=stats['rgb'].mean, std_dev=stats['rgb'].std_dev)]
-        co_transformations = [tfs.flip_horizontal(), tfs.flip_vertical()]
+                                 tfs.normalise(mean=stats['depth'].mean, std_dev=stats['depth'].std_dev)]
+
+        co_transformations = [tfs.flip_horizontal(), tfs.flip_vertical(), tfs.NHWC_to_NCHW(),
+                              tfs.type_converter(dtype=torch.float32)]
 
         dset.setup_transformations(rgb_transformations, depth_transformations, co_transformations)
 
@@ -60,44 +91,69 @@ class ThingNetTrainer:
                                         num_workers=6)}
         return dataloader
 
+    def _get_next_batch(self, phase):
+        try:
+            inputs, masks = next(self._data_iter[phase])
+        except StopIteration:
+            logging.debug("Resetting iterator for phase %s" % phase)
+            self._data_iter[phase] = iter(self.dataloader[phase])
+            inputs, masks = next(self._data_iter[phase]
+                                 )
+        inputs = [ip.type(self.dtypes.float) for ip in inputs]
+        masks = [msk.type(self.dtypes.float) for msk in masks]
+
+        # Expand dims to make inputs stackable
+        inputs = [ip.unsqueeze(dim=1) if len(ip.shape) == 3 else ip for ip in inputs]
+        inputs = torch.cat(inputs, dim=1)
+        return inputs, masks
+
     def get_loss(self, output, mask_batch, obj_batch):
 
         # Find correspondences
         # evaluate triplet loss at correspondences
-        loss = torch.Tensor([0.0], requires_grad=True)
+        gt = torch.rand(output.shape).to(self.device)
+        loss = gt - output
+        loss = loss.sum()
         return loss
+
+    def get_optimiser(self, params, lr, weight_decay):
+        return torch.optim.Adam(params, lr=lr, weight_decay=weight_decay)
 
     def train(self):
 
-        step = 0
-
         for epoch in range(100):
-            logging.info("Epoch %d of %d" % (epoch, 100))
+            logging.info("\nEpoch %d of %d" % (epoch + 1, 100))
 
-            phase = 'val' if step % self.val_freq == 0 else 'train'
+            for step in tqdm(range(len(self.dataloader['train']))):
 
-            if phase == 'train':
-                self.scheduler.step()
+                # -----------
+                # 1. Train
+                # -----------
+                # self.scheduler.step()
                 self.model.train()
-            else:
-                self.model.eval()
-
-            for data in self.dataloader[phase]:
-                inputs = data[:2]
-                masks = data[2:]
-
-                inputs.to(self.device)
-                masks.to(self.device)
-
                 self.optimiser.zero_grad()
 
-                with torch.set_grad_enabled(phase == 'train'):
+                inputs, masks = self._get_next_batch('train')
+
+                with torch.set_grad_enabled(True):
                     output = self.model(inputs)
                     loss = self.get_loss(output, masks[0], masks[1])
+                    loss.backward()
+                    self.optimiser.step()
 
-                    if phase == 'train':
-                        loss.backward()
-                        self.optimiser.step()
+                # --------------
+                # 2. Evaluate
+                # --------------
+                if step % self.val_freq == 0:
+                    self.model.eval()
+                    inputs, masks = self._get_next_batch('val')
+
+                    with torch.set_grad_enabled(False):
+                        output = self.model(inputs)
+                        vloss = self.get_loss(output, masks[0], masks[1])
+
+                    logging.info("\n\nVal loss: %0.5f, \t Train loss: %0.5f\n" %
+                                 (vloss.item(), loss.item()))
 
                 # TODO: logging
                 # TODO: save stats
@@ -113,7 +169,6 @@ class ThingNetTrainer:
             num = self.batch_size
         elif num >= self.batch_size:
             num = self.batch_size
-
 
         # Visualise model predictions
         pass
@@ -131,3 +186,4 @@ if __name__ == "__main__":
 # Update weights
 # Implement config parser
 # Configure model and training from config file
+# Change depth to disparity ( easier to deal with)

@@ -65,15 +65,15 @@ class ThingNet(nn.Module):
                               has_relu=True, has_bias=False)]
 
         if is_training:
-            heads = [ThingNetHead(conv_channel, descriptor_dim, 2,
+            heads = [ThingNetHead(conv_channel, descriptor_dim, 16,
                                   True, norm_layer),
-                     ThingNetHead(conv_channel, descriptor_dim, 1,
+                     ThingNetHead(conv_channel, descriptor_dim, 8,
                                   True, norm_layer),
-                     ThingNetHead(conv_channel * 2, descriptor_dim, 1,
+                     ThingNetHead(conv_channel * 2, descriptor_dim, 8,
                                   False, norm_layer)]
         else:
             heads = [None, None,
-                     ThingNetHead(conv_channel * 2, descriptor_dim, 1,
+                     ThingNetHead(conv_channel * 2, descriptor_dim, 8,
                                   False, norm_layer)]
 
         self.ffm = FeatureFusion(conv_channel * 2, conv_channel * 2,

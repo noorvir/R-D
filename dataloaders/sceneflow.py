@@ -170,7 +170,7 @@ def create_rdmo_dataset(rgb_path, disparity_path, material_path,
         idx = np.arange(num_points)
         np.random.seed(seed)
         np.random.shuffle(idx)
-        split_idx = int(train_val_split[1] * num_points)
+        split_idx = int(train_val_split[0] * num_points)
         train_idx, val_idx = idx[: split_idx], idx[split_idx:]
         h5f.attrs['train_idx'] = train_idx
         h5f.attrs['val_idx'] = val_idx
@@ -192,7 +192,6 @@ class RDMODataset(Dataset):
 
     def __init__(self, dataset_path):
 
-        self.device = "cpu"
         self.dataset_path = dataset_path
         self.rgb_transform = tfs.compose([])
         self.depth_transform = tfs.compose([])
@@ -222,7 +221,7 @@ class RDMODataset(Dataset):
         rgb, depth, material, obj = self.co_transform([rgb, depth, material, obj],
                                                       seed=np.random.randint(10000))
 
-        return rgb, depth, material, obj
+        return (rgb, depth), (material, obj)
 
     def _get_dataset_stats(self):
         """

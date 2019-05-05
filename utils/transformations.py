@@ -2,6 +2,7 @@
 Image transformations.
 """
 import cv2
+import torch
 import numpy as np
 
 from math import inf
@@ -47,7 +48,7 @@ def compose(func_list):
 
     """
     assert type(func_list) is list, ("Argument to compose function"
-                                         "must be a list of functions.")
+                                     "must be a list of functions.")
 
     def f(images, seed):
         if type(images) is not list:
@@ -55,11 +56,14 @@ def compose(func_list):
 
         transf_images = []
         np.random.seed(seed)
-        probs = np.random.rand(len(func_list)).tolist()
+        rands = np.random.rand(len(func_list)).tolist()
 
         for image in images:
-            for func, prob in zip(func_list, probs):
-                if 0.5 < prob:
+            for func, rand in zip(func_list, rands):
+                prob = 0.5
+                prob = func.prob if func.prob is not None else prob
+
+                if rand < prob:
                     image = func(image)
 
             transf_images.append(image)
@@ -69,7 +73,39 @@ def compose(func_list):
     return f
 
 
-def random_noise(im=None, frac=0.01, scale=0.05, dist='normal'):
+def type_converter(im=None, dtype=np.float32):
+
+    def f(image):
+        if type(dtype) == torch.dtype:
+            return torch.tensor(image, dtype=dtype)
+        return image.astype(dtype=dtype)
+
+    f.prob = 1.0
+    if im is None:
+        return f
+    else:
+        return f(im)
+
+
+def NHWC_to_NCHW(im=None, prob=1.0):
+    """Convert to pytorch image convention"""
+
+    def f(image):
+        shape = np.shape(image)
+        if len(shape) == 3:
+            if shape[2] < shape[0] and shape[2] < shape[1]:
+                return np.transpose(image, (2, 0, 1))
+        return image
+
+    f.prob = prob
+
+    if im is None:
+        return f
+    else:
+        return f(im)
+
+
+def random_noise(im=None, frac=0.01, scale=0.05, dist='normal', prob=None):
     """
 
     Parameters
@@ -114,18 +150,22 @@ def random_noise(im=None, frac=0.01, scale=0.05, dist='normal'):
 
         return ret
 
+    f.prob = prob
+
     if im is None:
         return f
     else:
         return f(im)
 
 
-def gaussian_blur(im=None, k=5, sigma=1):
+def gaussian_blur(im=None, k=5, sigma=1, prob=None):
     kwargs = {'ksize': (k, k),
               'sigmaX': sigma}
 
     def blur(image, prob=1.0):
         return cv2.GaussianBlur(image, **kwargs)
+
+    blur.prob = prob
 
     if im is None:
         return blur
@@ -133,18 +173,20 @@ def gaussian_blur(im=None, k=5, sigma=1):
         return blur(im)
 
 
-def random_dropout(im=None, dropout_prob=0.3):
+def random_dropout(im=None, dropout_prob=0.3, prob=None):
 
-    def dropout(image):
+    def f(image):
         pass
 
+    f.prob = prob
+
     if im is None:
-        return dropout
+        return f
     else:
-        return dropout(im)
+        return f(im)
 
 
-def scale_min_max(im=None, max_val=1, log_scale=False, adaptation='rgb'):
+def scale_min_max(im=None, max_val=1, log_scale=False, adaptation='rgb', prob=None):
     """
     Normalise to range [0, 1].
 
@@ -169,13 +211,15 @@ def scale_min_max(im=None, max_val=1, log_scale=False, adaptation='rgb'):
 
         return max_val * (image - image.min())/(image.max() - image.min())
 
+    f.prob = prob
+
     if im is None:
         return f
     else:
         return f(im)
 
 
-def normalise(im=None, mean=None, std_dev=None):
+def normalise(im=None, mean=None, std_dev=None, prob=None):
     """
     Standard score normalisation.
 
@@ -196,33 +240,46 @@ def normalise(im=None, mean=None, std_dev=None):
     def f(image):
         return (image - mean)/std_dev
 
+    f.prob = prob
+
     if im is None:
         return f
     else:
         return f(im)
 
 
-def flip_vertical(im=None):
+def depth_to_proximity(mean=None, prob=1.0):
+
+    # f.prob = prob
+
+    pass
+
+
+def flip_vertical(im=None, prob=None):
     def f(image):
         return cv2.flip(image, flipCode=0)
 
+    f.prob = prob
+
     if im is None:
         return f
     else:
         return f(im)
 
 
-def flip_horizontal(im=None):
+def flip_horizontal(im=None, prob=None):
     def f(image):
         return cv2.flip(image, flipCode=1)
 
+    f.prob = prob
+
     if im is None:
         return f
     else:
         return f(im)
 
 
-def gradient(im=None, blur=None, adaptation='rgb'):
+def gradient(im=None, blur=None, adaptation='rgb', prob=None):
 
     adapt = hsv_value if adaptation == 'hsv' else each_channel
 
@@ -237,13 +294,15 @@ def gradient(im=None, blur=None, adaptation='rgb'):
 
         return np.sqrt((sobelx ** 2) + (sobely ** 2))
 
+    f.prob = prob
+
     if im is None:
         return f
     else:
         return f(im)
 
 
-def laplacian(im=None, blur=None, adaptation='rgb'):
+def laplacian(im=None, blur=None, adaptation='rgb', prob=None):
 
     adapt = hsv_value if adaptation == 'hsv' else each_channel
 
@@ -258,13 +317,15 @@ def laplacian(im=None, blur=None, adaptation='rgb'):
 
         return limg
 
+    f.prob = prob
+
     if im is None:
         return f
     else:
         return f(im)
 
 
-def median(im=None, disk_size=2, adaptation='rgb'):
+def median(im=None, disk_size=2, adaptation='rgb', prob=None):
 
     adapt = hsv_value if adaptation == 'hsv' else each_channel
 
@@ -272,13 +333,15 @@ def median(im=None, disk_size=2, adaptation='rgb'):
     def f(image):
         return cv2.medianBlur(image, disk_size)
 
+    f.prob = prob
+
     if im is None:
         return f
     else:
         return f(im)
 
 
-def downsample(im=None, size=None, adaptation='rgb', interpolation='linear'):
+def downsample(im=None, size=None, adaptation='rgb', interpolation='linear', prob=None):
     """
 
     Parameters
@@ -305,13 +368,15 @@ def downsample(im=None, size=None, adaptation='rgb', interpolation='linear'):
     def f(image):
         return cv2.resize(image, size, interpolation=intp)
 
+    f.prob = prob
+
     if im is None:
         return f
     else:
         return f(im)
 
 
-def bin_image(bins=(0, 25, 50, 75, 100, 125, 150, 175, 200, 225, 255)):
+def bin_image(bins=(0, 25, 50, 75, 100, 125, 150, 175, 200, 225, 255), prob=None):
 
     def f(image):
         # Set the first bin to zero
@@ -320,7 +385,7 @@ def bin_image(bins=(0, 25, 50, 75, 100, 125, 150, 175, 200, 225, 255)):
     return f
 
 
-def one_hot_image(index):
+def one_hot_image(index, prob=None):
 
     def f(image):
 
