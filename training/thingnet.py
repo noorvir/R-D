@@ -122,7 +122,7 @@ class ThingNetTrainer:
     def train(self):
 
         for epoch in range(100):
-            logging.info("\nEpoch %d of %d" % (epoch + 1, 100))
+            logging.info("\n***** Epoch %d of %d *****" % (epoch + 1, 100))
 
             for step in tqdm(range(len(self.dataloader['train']))):
 
