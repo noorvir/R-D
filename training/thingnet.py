@@ -88,10 +88,19 @@ class ThingNetTrainer:
         inputs = torch.cat(inputs, dim=1)
         return inputs, masks
 
-    def get_loss(self, output, mask_batch, obj_batch):
+    def get_loss(self, output, mat_mask_batch, obj_mask_batch):
 
         # Find correspondences
         # evaluate triplet loss at correspondences
+
+        total_loss = 0
+
+        for mat_mask, obj_mask in zip(mat_mask_batch, obj_mask_batch):
+            clist = find_correspondences(mat_mask, obj_mask, self.dtypes)
+
+            # compute loss over element from batch
+            # add to total loss
+
         gt = torch.rand(output.shape).to(self.device)
         loss = gt - output
         loss = loss.sum()
