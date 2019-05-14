@@ -7,7 +7,7 @@ import tarfile
 import numpy as np
 
 from imageio import imread
-from utils.dataio import read_pfm
+from tools.dataio import read_pfm
 from time import time, gmtime, strftime
 
 

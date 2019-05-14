@@ -15,9 +15,9 @@ from matplotlib import pyplot as plt
 from time import time, gmtime, strftime
 from torchvision.transforms import Compose
 
-from utils.dataio import read_pfm
-from utils import transformations as tfs
-from utils.dataset_tools import encode_webp, decode_webp, ImageDatasetStats
+from tools.dataio import read_pfm
+from tools import transformations as tfs
+from tools.dataset_tools import encode_webp, decode_webp, ImageDatasetStats
 
 # N.B. The baseline value is made up. The data-set does not provide it.
 BASELINE = 0.5

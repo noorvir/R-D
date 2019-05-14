@@ -5,7 +5,7 @@ import torch.utils.model_zoo as model_zoo
 
 from time import time
 
-from utils.logger import get_logger
+from tools.logger import get_logger
 
 logger = get_logger()
 model_urls = {

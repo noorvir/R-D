@@ -19,33 +19,14 @@ from torch.utils.data.sampler import SubsetRandomSampler
 
 from networks.thingnet import ThingNet
 from networks.fcn import FCN
-from utils import transformations as tfs
+from tools import transformations as tfs
+from tools.structures import DataTypes
+
+from dataloaders.correspondence import find_correspondences
 from dataloaders.sceneflow import RDMODataset
 
 
 logging.getLogger().setLevel(logging.INFO)
-
-
-class DataTypes:
-    def __init__(self, device='cpu'):
-        self.__dict__ = {}
-
-        if device.lower() == 'cpu':
-            self.float = torch.FloatTensor
-            self.double = torch.DoubleTensor
-            self.half = torch.HalfTensor
-            self.char = torch.CharTensor
-            self.short = torch.ShortTensor
-            self.int = torch.IntTensor
-            self.long = torch.LongTensor
-        else:
-            self.float = torch.cuda.FloatTensor
-            self.double = torch.cuda.DoubleTensor
-            self.half = torch.cuda.HalfTensor
-            self.char = torch.cuda.CharTensor
-            self.short = torch.cuda.ShortTensor
-            self.int = torch.cuda.IntTensor
-            self.long = torch.cuda.LongTensor
 
 
 class ThingNetTrainer:

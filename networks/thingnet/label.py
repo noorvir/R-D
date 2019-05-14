@@ -6,7 +6,7 @@ import numpy as np
 import logging
 import tarfile
 
-from utils.dataio import read_pfm
+from tools.dataio import read_pfm
 
 
 class LabelIndex(dict):

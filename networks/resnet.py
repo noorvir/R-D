@@ -2,8 +2,8 @@ import torch
 import torch.nn as nn
 
 from time import time
-from utils.logger import get_logger
-from utils.nn.network_tools import load_model
+from tools.logger import get_logger
+from tools.nn.network_tools import load_model
 
 logger = get_logger()
 

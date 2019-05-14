@@ -2,7 +2,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from networks.resnet import resnet
-from utils.nn.segmentation_tools import ConvBnRelu, AttentionRefinement, FeatureFusion
+from tools.nn.segmentation_tools import ConvBnRelu, AttentionRefinement, FeatureFusion
 
 
 class config:

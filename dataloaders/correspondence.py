@@ -179,7 +179,7 @@ def find_correspondences(material_mask, object_mask,
 
 if __name__ == "__main__":
 
-    from utils.dataio import read_pfm
+    from tools.dataio import read_pfm
     mat_path = "/home/noorvir/Documents/projects/geometricOS/research_and_dev/data/material.pfm"
     obj_path = "/home/noorvir/Documents/projects/geometricOS/research_and_dev/data/object.pfm"
 

@@ -4,7 +4,7 @@ import torch.nn.functional as F
 from torch.utils.checkpoint import checkpoint
 
 from networks import resnet18
-from utils.nn.segmentation_tools import ConvBnRelu, AttentionRefinement, FeatureFusion
+from tools.nn.segmentation_tools import ConvBnRelu, AttentionRefinement, FeatureFusion
 
 
 def get():
