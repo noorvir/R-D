@@ -29,6 +29,20 @@ from dataloaders.sceneflow import RDMODataset
 logging.getLogger().setLevel(logging.INFO)
 
 
+def clustering_loss(matches, non_matches):
+    """
+
+    Parameters
+    ----------
+    matches:
+    non_matches: 
+
+    Returns
+    -------
+
+    """
+
+
 class ThingNetTrainer:
 
     def __init__(self):
@@ -96,15 +110,49 @@ class ThingNetTrainer:
         total_loss = 0
 
         for mat_mask, obj_mask in zip(mat_mask_batch, obj_mask_batch):
-            clist = find_correspondences(mat_mask, obj_mask, self.dtypes)
-
             # compute loss over element from batch
             # add to total loss
 
-        gt = torch.rand(output.shape).to(self.device)
-        loss = gt - output
-        loss = loss.sum()
-        return loss
+            clist = find_correspondences(mat_mask, obj_mask, self.dtypes)
+
+            variances_list = []
+            means_list = []
+            non_match_losses = []
+
+            for material in clist:
+                # get matches
+                match_idx = material[0]
+                non_match_idx = material[1]
+                obj_match_idx = material[2]
+
+                matches = output[match_idx[:, 0], match_idx[:, 1]]
+                non_matches = output[non_match_idx[:, 0], non_match_idx[:, 1]]
+                obj_matches = output[obj_match_idx[:, 0], obj_match_idx[:, 1]]
+
+                variances_list.append(torch.var(matches))
+                means_list.append(torch.mean(matches))
+
+                mshape = matches.shape # (1, 5, 121)
+                non_matches = torch.reshape(non_matches, (1, 10, mshape[0], -1))
+                non_match_losses.append((matches - non_matches).pow(2))
+
+            variances_tensor = torch.tensor(variances_list)
+            dissimilarity_tensor = torch.tensor(non_match_losses)
+
+            var_loss = torch.sum(variances_tensor)
+            dissimilarity_loss = torch.sum(dissimilarity_tensor)
+            mean_loss = 0
+
+            for i in range(len(means_list)):
+                means_tensor = torch.tensor(means_list[:i] + means_list[i:])
+                mean_loss += (means_list[i] - means_tensor).pow(2)
+
+            total_loss += var_loss + dissimilarity_loss + (1 / mean_loss)
+
+        # gt = torch.rand(output.shape).to(self.device)
+        # loss = gt - output
+        # loss = loss.sum()
+        return total_loss
 
     def get_optimiser(self, params, lr, weight_decay):
         return torch.optim.Adam(params, lr=lr, weight_decay=weight_decay)
