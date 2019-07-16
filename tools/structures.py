@@ -6,7 +6,7 @@ class DataTypes:
     def __init__(self, device='cpu'):
         self.__dict__ = {}
         self._device = device.lower()
-        assert self._device in ['cpu', 'gpu']
+        assert self._device in ['cpu', 'cuda']
 
         if self._device == 'cpu':
             self.float = torch.FloatTensor

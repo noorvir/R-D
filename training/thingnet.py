@@ -35,7 +35,7 @@ def clustering_loss(matches, non_matches):
     Parameters
     ----------
     matches:
-    non_matches: 
+    non_matches:
 
     Returns
     -------
@@ -45,10 +45,15 @@ def clustering_loss(matches, non_matches):
 
 class ThingNetTrainer:
 
-    def __init__(self):
+    def __init__(self, device=None):
 
-        self.device = torch.device("cuda") if torch.cuda.is_available() else "cpu"
-        self.dtypes = DataTypes('gpu')
+        if device is None:
+            self.device = torch.device('cuda') if torch.cuda.is_available() else 'cpu'
+            self.dtypes = DataTypes('cuda') if torch.cuda.is_available() else DataTypes('cpu')
+        else:
+            self.device = torch.device(device)
+            self.dtypes = DataTypes(device)
+
         # self.model = ThingNet(4, 10, False)#.to(self.device)
         self.batch_size = 10
         self.model = FCN((self.batch_size, 4, 540, 960), 10).to(self.device)
@@ -117,7 +122,7 @@ class ThingNetTrainer:
 
             variances_list = []
             means_list = []
-            non_match_losses = []
+            similar_non_matches_loss_list = []
 
             for material in clist:
                 # get matches
@@ -125,33 +130,35 @@ class ThingNetTrainer:
                 non_match_idx = material[1]
                 obj_match_idx = material[2]
 
-                matches = output[match_idx[:, 0], match_idx[:, 1]]
-                non_matches = output[non_match_idx[:, 0], non_match_idx[:, 1]]
-                obj_matches = output[obj_match_idx[:, 0], obj_match_idx[:, 1]]
+                matches = output[:, :, match_idx[:, 0], match_idx[:, 1]]
+                non_matches = output[:, :, non_match_idx[:, 0], non_match_idx[:, 1]]
+                obj_matches = output[:, :, obj_match_idx[:, 0], obj_match_idx[:, 1]]
 
                 variances_list.append(torch.var(matches))
                 means_list.append(torch.mean(matches))
 
+                # Compute pixel intensity (dis)similarity
                 mshape = matches.shape # (1, 5, 121)
-                non_matches = torch.reshape(non_matches, (1, 10, mshape[0], -1))
-                non_match_losses.append((matches - non_matches).pow(2))
+                nmshape = non_matches.shape
+                rand_idx = torch.randint(0, nmshape[-1], (mshape[-1],)).type(self.dtypes.long)
+                similar_non_matches = non_matches[:, :, rand_idx]
+                similar_non_matches_loss = torch.mean((matches - similar_non_matches).pow(2))
+                similar_non_matches_loss_list.append(similar_non_matches_loss)
 
-            variances_tensor = torch.tensor(variances_list)
-            dissimilarity_tensor = torch.tensor(non_match_losses)
+            variances_tensor = torch.tensor(variances_list).type(self.dtypes.float)
+            similarity_tensor = torch.tensor(similar_non_matches_loss_list).type(self.dtypes.float)
 
-            var_loss = torch.sum(variances_tensor)
-            dissimilarity_loss = torch.sum(dissimilarity_tensor)
             mean_loss = 0
+            var_loss = torch.mean(variances_tensor)
+            similarity_loss = torch.mean(similarity_tensor)
 
+            # Compute loss b/w each mean and all the rest.
             for i in range(len(means_list)):
-                means_tensor = torch.tensor(means_list[:i] + means_list[i:])
-                mean_loss += (means_list[i] - means_tensor).pow(2)
+                means_tensor = torch.tensor(means_list[:i] + means_list[i + 1:]).type(self.dtypes.float)
+                mean_loss += torch.mean((means_list[i] - means_tensor).pow(2))
 
-            total_loss += var_loss + dissimilarity_loss + (1 / mean_loss)
+            total_loss += (var_loss + 1/similarity_loss + 1/mean_loss)
 
-        # gt = torch.rand(output.shape).to(self.device)
-        # loss = gt - output
-        # loss = loss.sum()
         return total_loss
 
     def get_optimiser(self, params, lr, weight_decay):
@@ -174,8 +181,8 @@ class ThingNetTrainer:
                 inputs, masks = self._get_next_batch('train')
 
                 with torch.set_grad_enabled(True):
-                    output = self.model(inputs)
-                    loss = self.get_loss(output, masks[0], masks[1])
+                    output = self.model(inputs).type(self.dtypes.float)
+                    loss = self.get_loss(output, masks[0], masks[1]).type(self.dtypes.float)
                     loss.backward()
                     self.optimiser.step()
 
@@ -213,7 +220,7 @@ class ThingNetTrainer:
 
 
 if __name__ == "__main__":
-    trainer = ThingNetTrainer()
+    trainer = ThingNetTrainer(device='cuda')
     trainer.train()
 # TODO Next
 # Allocate variables/Tensors onto the correct device
