@@ -1,6 +1,8 @@
-# R&D
+# ThingNet
 
-Repository of ideas in the brewing stage.
+This repository contains a work-in-progress for "ThingNet": a CNN based method for learning and clustering descriptors of "things".  
+
+Currently it is a repository of ideas in the brewing stage.
 
 
 # Notes
