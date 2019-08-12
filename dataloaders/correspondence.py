@@ -159,7 +159,7 @@ def find_correspondences(material_mask, object_mask, dtypes,
         object_mask = torch.as_tensor(np.ascontiguousarray(object_mask))
         object_mask = object_mask.type(dtypes.long)
 
-    # Get unique mask values a prune to remove spurious values
+    # Get unique mask values and prune to remove spurious values
     material_mask_unique_vals, counts = torch.unique(material_mask, return_counts=True)
     idx_mask = torch.where(counts > min_pixels_pruning_threshold,
                            torch.ones(counts.shape).type(dtypes.byte),

@@ -21,6 +21,7 @@ from networks.thingnet import ThingNet
 from networks.fcn import FCN
 from tools import transformations as tfs
 from tools.structures import DataTypes
+from tools.losses.correspondence_losses import cluster_loss
 
 from dataloaders.correspondence import find_correspondences
 from dataloaders.sceneflow import RDMODataset
@@ -108,58 +109,7 @@ class ThingNetTrainer:
         return inputs, masks
 
     def get_loss(self, output, mat_mask_batch, obj_mask_batch):
-
-        # Find correspondences
-        # evaluate triplet loss at correspondences
-
-        total_loss = 0
-
-        for mat_mask, obj_mask in zip(mat_mask_batch, obj_mask_batch):
-            # compute loss over element from batch
-            # add to total loss
-
-            clist = find_correspondences(mat_mask, obj_mask, self.dtypes)
-
-            variances_list = []
-            means_list = []
-            similar_non_matches_loss_list = []
-
-            for material in clist:
-                # get matches
-                match_idx = material[0]
-                non_match_idx = material[1]
-                obj_match_idx = material[2]
-
-                matches = output[:, :, match_idx[:, 0], match_idx[:, 1]]
-                non_matches = output[:, :, non_match_idx[:, 0], non_match_idx[:, 1]]
-                obj_matches = output[:, :, obj_match_idx[:, 0], obj_match_idx[:, 1]]
-
-                variances_list.append(torch.var(matches))
-                means_list.append(torch.mean(matches))
-
-                # Compute pixel intensity (dis)similarity
-                mshape = matches.shape # (1, 5, 121)
-                nmshape = non_matches.shape
-                rand_idx = torch.randint(0, nmshape[-1], (mshape[-1],)).type(self.dtypes.long)
-                similar_non_matches = non_matches[:, :, rand_idx]
-                similar_non_matches_loss = torch.mean((matches - similar_non_matches).pow(2))
-                similar_non_matches_loss_list.append(similar_non_matches_loss)
-
-            variances_tensor = torch.tensor(variances_list).type(self.dtypes.float)
-            similarity_tensor = torch.tensor(similar_non_matches_loss_list).type(self.dtypes.float)
-
-            mean_loss = 0
-            var_loss = torch.mean(variances_tensor)
-            similarity_loss = torch.mean(similarity_tensor)
-
-            # Compute loss b/w each mean and all the rest.
-            for i in range(len(means_list)):
-                means_tensor = torch.tensor(means_list[:i] + means_list[i + 1:]).type(self.dtypes.float)
-                mean_loss += torch.mean((means_list[i] - means_tensor).pow(2))
-
-            total_loss += (var_loss + 1/similarity_loss + 1/mean_loss)
-
-        return total_loss
+        return cluster_loss(output, mat_mask_batch, obj_mask_batch, self.dtypes)
 
     def get_optimiser(self, params, lr, weight_decay):
         return torch.optim.Adam(params, lr=lr, weight_decay=weight_decay)

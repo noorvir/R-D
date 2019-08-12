@@ -1,6 +1,7 @@
 import torch
 from dataloaders.correspondence import find_correspondences
 
+
 def match_loss():
     # compute loss for pixels that should be similar
     pass
@@ -12,6 +13,17 @@ def non_match_loss():
 
 
 def triplet_loss():
+
+    # foreach batch
+    #   clist = find_correspondences(mat_masks)
+    #
+    #   foreach material in clist
+    #       let num
+    #       sample
+    #       triplet_losses = (matches_a_descriptors - matches_b_descriptors).pow(2) - (matches_a_descriptors - non_matches_b_descriptors).pow(2) + alpha
+    #         triplet_loss = 1.0 / num_non_matches * torch.clamp(triplet_losses, min=0).sum()
+    #
+    #
     pass
 
 
@@ -46,14 +58,15 @@ def correspondence_loss(output, clist, margin=0.5, hard_negative=True):
         loss += torch.sum(mean - means[i:]).pow(2)
 
 
-def cluster_loss(output, mask1, mask2, dtypes):
+def cluster_loss(output, mat_masks, obj_masks, dtypes):
 
     # Find correspondences
     # evaluate triplet loss at correspondences
 
     total_loss = 0
 
-    for mat_mask, obj_mask in zip(mask1, mask2):
+    # iterate over batch (?)
+    for mat_mask, obj_mask in zip(mat_masks, obj_masks):
         clist = find_correspondences(mat_mask, obj_mask, dtypes)
 
         variances_list = []
